@@ -1,8 +1,34 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { aboutData } from "@/data/about";
+
+// Lenis-aware scroll shift that keeps the remaining momentum
+function shiftScroll(diff) {
+  const lenis = typeof window !== "undefined" ? window.__lenis : null;
+
+  if (!lenis) {
+    window.scrollBy(0, diff);
+    return;
+  }
+
+  // Distance Lenis was still going to travel (the momentum we don't want to lose)
+  const remaining = (lenis.targetScroll ?? lenis.scroll) - lenis.scroll;
+
+  lenis.resize();
+  const base = lenis.scroll + diff;
+  lenis.scrollTo(base, { immediate: true, force: true });
+
+  // Re-apply the leftover momentum so the scroll keeps flowing
+  if (Math.abs(remaining) > 1) {
+    lenis.scrollTo(base + remaining, {
+      duration: 0.5,
+      force: true,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+    });
+  }
+}
 
 export default function VisionMissionSection() {
   const { image, vision, mission } = aboutData.visionMissionSection;
@@ -10,85 +36,79 @@ export default function VisionMissionSection() {
   const pinContainerRef = useRef(null);
   const lastScrollY = useRef(0);
   const tickingRef = useRef(false);
+  const modeRef = useRef("pin");
+  const anchorRef = useRef(null); // reference point used to keep the page still when collapsing
 
   const [isDesktop, setIsDesktop] = useState(false);
-  const [scrollDir, setScrollDir] = useState("down");
+  const [mode, setMode] = useState("pin"); // "pin" (top->bottom) | "free" (passed / scrolled up)
   const [pinStatus, setPinStatus] = useState("before");
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [containerRect, setContainerRect] = useState({
-    left: 0,
-    width: 0,
-  });
+  const [containerRect, setContainerRect] = useState({ left: 0, width: 0 });
   const [sectionEntered, setSectionEntered] = useState(false);
 
   // Screen size listener
   useEffect(() => {
-    const checkScreenSize = () => {
-      setIsDesktop(window.innerWidth >= 1024);
-    };
-
+    const checkScreenSize = () => setIsDesktop(window.innerWidth >= 1024);
     checkScreenSize();
     window.addEventListener("resize", checkScreenSize);
     return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
 
-  // Entrance observer: Trigger on top-to-bottom enter, reset when scrolled above
+  // Entrance observer (image slide-in)
   useEffect(() => {
     if (!isDesktop) {
       setSectionEntered(true);
-      return;
+      return undefined;
     }
 
     const element = pinContainerRef.current;
-    if (!element) return;
+    if (!element) return undefined;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           setSectionEntered(true);
         } else if (entry.boundingClientRect.top > 0) {
-          // Reset animation state when scrolled back above section
           setSectionEntered(false);
         }
       },
-      { threshold: 0.05 }
+      { threshold: 0.05 },
     );
 
     observer.observe(element);
     return () => observer.disconnect();
   }, [isDesktop]);
 
-  // Single rAF-throttled scroll handler: tracks direction AND pin math together,
-  // and never changes layout height/position based on direction (that was
-  // causing the document height to collapse mid-scroll and produce jumps).
+  // Pin math + direction + pin/free switching
   useEffect(() => {
     const update = () => {
       tickingRef.current = false;
 
       const currentScrollY = window.scrollY;
-      let dir = scrollDir;
-      if (currentScrollY < lastScrollY.current) {
-        dir = "up";
-        setScrollDir("up");
-      } else if (currentScrollY > lastScrollY.current) {
-        dir = "down";
-        setScrollDir("down");
-      }
+      const goingUp = currentScrollY < lastScrollY.current;
       lastScrollY.current = currentScrollY;
 
-      if (!isDesktop) {
-        setPinStatus("before");
-        setScrollProgress(0);
-        return;
-      }
+      if (!isDesktop) return;
 
       const el = pinContainerRef.current;
       if (!el) return;
 
       const rect = el.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const total = rect.height - viewportHeight;
+      const vh = window.innerHeight;
 
+      /* ---------- FREE MODE: normal flow, re-arm when fully below viewport ---------- */
+      if (modeRef.current === "free") {
+        if (rect.top >= vh) {
+          modeRef.current = "pin";
+          setMode("pin");
+          setPinStatus("before");
+          setScrollProgress(0);
+        }
+        return;
+      }
+
+      /* ---------- PIN MODE ---------- */
+      const total = rect.height - vh;
       setContainerRect({ left: rect.left, width: rect.width });
 
       if (total <= 0) {
@@ -97,17 +117,37 @@ export default function VisionMissionSection() {
         return;
       }
 
+      // 1) Silent switch: section is completely above the viewport (passed going down)
+      if (rect.bottom <= 0) {
+        anchorRef.current = { kind: "bottom", value: rect.bottom };
+        modeRef.current = "free";
+        setMode("free");
+        return;
+      }
+
+      // 2) Fallback: user reversed direction while still inside the section
+      const isPinned = rect.top <= 0 && rect.bottom > vh;
+      const isAfter = rect.top <= 0 && rect.bottom <= vh;
+
+      if (goingUp && (isPinned || isAfter)) {
+        anchorRef.current = {
+          kind: "top",
+          value: isPinned ? 0 : rect.bottom - vh,
+        };
+        modeRef.current = "free";
+        setMode("free");
+        return;
+      }
+
       if (rect.top > 0) {
         setPinStatus("before");
         setScrollProgress(0);
-      } else if (rect.bottom <= viewportHeight) {
+      } else if (isAfter) {
         setPinStatus("after");
         setScrollProgress(1);
       } else {
         setPinStatus("pinned");
-        const scrolled = -rect.top;
-        const progress = Math.min(Math.max(scrolled / total, 0), 1);
-        setScrollProgress(progress);
+        setScrollProgress(Math.min(Math.max(-rect.top / total, 0), 1));
       }
     };
 
@@ -118,6 +158,7 @@ export default function VisionMissionSection() {
       }
     };
 
+    lastScrollY.current = window.scrollY;
     update();
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
@@ -126,20 +167,33 @@ export default function VisionMissionSection() {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDesktop]);
 
-  const isScrollingUp = scrollDir === "up";
+  // After switching to free mode, keep the page visually still
+  useLayoutEffect(() => {
+    if (mode !== "free" || !anchorRef.current) return;
 
-  // Visible during down-scroll progress, or instantly visible when scrolling up.
-  // NOTE: this only affects opacity/transform classes below, never layout/height.
-  const showVision = !isDesktop || isScrollingUp || scrollProgress >= 0.1;
-  const showMission = !isDesktop || isScrollingUp || scrollProgress >= 0.55;
+    const el = pinContainerRef.current;
+    if (!el) return;
 
-  // Wrapper positioning is driven purely by pinStatus (rect-based), which is
-  // correct in both scroll directions on its own — no direction special-casing.
+    const { kind, value } = anchorRef.current;
+    anchorRef.current = null;
+
+    const rect = el.getBoundingClientRect();
+    const now = kind === "bottom" ? rect.bottom : rect.top;
+    const diff = now - value;
+
+    if (diff !== 0) shiftScroll(diff);
+  }, [mode]);
+
+  const isPinMode = isDesktop && mode === "pin";
+
+  const showVision = !isPinMode || scrollProgress >= 0.1;
+  const showMission = !isPinMode || scrollProgress >= 0.55;
+  const showImage = !isPinMode || sectionEntered;
+
   let wrapperStyle;
-  if (!isDesktop) {
+  if (!isPinMode) {
     wrapperStyle = { position: "relative" };
   } else if (pinStatus === "pinned") {
     wrapperStyle = {
@@ -149,25 +203,19 @@ export default function VisionMissionSection() {
       width: containerRect.width,
     };
   } else if (pinStatus === "after") {
-    wrapperStyle = {
-      position: "absolute",
-      left: 0,
-      right: 0,
-      bottom: 0,
-    };
+    wrapperStyle = { position: "absolute", left: 0, right: 0, bottom: 0 };
   } else {
-    wrapperStyle = {
-      position: "absolute",
-      left: 0,
-      right: 0,
-      top: 0,
-    };
+    wrapperStyle = { position: "absolute", left: 0, right: 0, top: 0 };
   }
+
+  const fade = isPinMode ? "lg:transition-all lg:duration-700 lg:ease-out" : "";
 
   return (
     <div
       ref={pinContainerRef}
-      className="relative w-full min-h-screen bg-[#f7f8fa] lg:h-[220vh]"
+      className={`relative w-full min-h-screen bg-[#f7f8fa] ${
+        isPinMode ? "lg:h-[220vh]" : ""
+      }`}
     >
       <div
         style={wrapperStyle}
@@ -177,13 +225,9 @@ export default function VisionMissionSection() {
           <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
             {/* ================= CONTENT ================= */}
             <div className="order-1 space-y-10 lg:order-2 lg:space-y-12">
-              {/* ---------- VISION ---------- */}
+              {/* VISION */}
               <div
-                className={`${
-                  isScrollingUp
-                    ? "!transition-none !transform-none !opacity-100"
-                    : "lg:transition-all lg:duration-700 lg:ease-out"
-                } ${
+                className={`${fade} ${
                   showVision
                     ? "lg:translate-y-0 lg:opacity-100"
                     : "lg:translate-y-5 lg:opacity-0"
@@ -192,23 +236,17 @@ export default function VisionMissionSection() {
                 <h2 className="mb-3 text-3xl font-normal leading-tight tracking-tight text-[#dc5835] sm:text-4xl lg:text-5xl">
                   {vision.title}
                 </h2>
-
                 <h3 className="mb-2 text-base font-semibold text-gray-900 sm:text-lg">
                   {vision.subtitle}
                 </h3>
-
                 <p className="max-w-xl text-sm leading-relaxed text-gray-600 sm:text-base">
                   {vision.description}
                 </p>
               </div>
 
-              {/* ---------- MISSION ---------- */}
+              {/* MISSION */}
               <div
-                className={`${
-                  isScrollingUp
-                    ? "!transition-none !transform-none !opacity-100"
-                    : "lg:transition-all lg:duration-700 lg:ease-out"
-                } ${
+                className={`${fade} ${
                   showMission
                     ? "lg:translate-y-0 lg:opacity-100"
                     : "lg:translate-y-5 lg:opacity-0"
@@ -217,11 +255,9 @@ export default function VisionMissionSection() {
                 <h2 className="mb-3 text-3xl font-normal leading-tight tracking-tight text-[#dc5835] sm:text-4xl lg:text-5xl">
                   {mission.title}
                 </h2>
-
                 <h3 className="mb-2 text-base font-semibold text-gray-900 sm:text-lg">
                   {mission.subtitle}
                 </h3>
-
                 <p className="max-w-xl text-sm leading-relaxed text-gray-600 sm:text-base">
                   {mission.description}
                 </p>
@@ -230,15 +266,11 @@ export default function VisionMissionSection() {
 
             {/* ================= IMAGE ================= */}
             <div
-              className={`order-2 group relative h-[350px] w-full overflow-hidden rounded-xs bg-gray-200 shadow-sm sm:h-[450px] lg:order-1 lg:h-[500px] ${
-                isScrollingUp
-                  ? "!transition-none !transform-none !opacity-100"
-                  : "lg:transition-all lg:duration-700 lg:ease-out"
-              } ${
-                sectionEntered || isScrollingUp
+              className={`order-2 group relative h-[350px] w-full overflow-hidden rounded-xs bg-gray-200 shadow-sm sm:h-[450px] lg:order-1 lg:h-[500px] lg:hover:shadow-md ${fade} ${
+                showImage
                   ? "lg:translate-x-0 lg:opacity-100"
                   : "lg:-translate-x-10 lg:opacity-0"
-              } lg:hover:shadow-md`}
+              }`}
             >
               <Image
                 src={image.src}

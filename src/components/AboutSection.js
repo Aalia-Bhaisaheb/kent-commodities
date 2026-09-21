@@ -13,11 +13,25 @@ import { aboutData } from "@/data/about";
 function shiftScroll(diff) {
   const lenis = typeof window !== "undefined" ? window.__lenis : null;
 
-  if (lenis) {
-    lenis.resize(); // pick up the new document height first
-    lenis.scrollTo(lenis.scroll + diff, { immediate: true, force: true });
-  } else {
+  if (!lenis) {
     window.scrollBy(0, diff);
+    return;
+  }
+
+  // Distance Lenis was still going to travel (the momentum we don't want to lose)
+  const remaining = (lenis.targetScroll ?? lenis.scroll) - lenis.scroll;
+
+  lenis.resize();
+  const base = lenis.scroll + diff;
+  lenis.scrollTo(base, { immediate: true, force: true });
+
+  // Re-apply the leftover momentum so the scroll keeps flowing
+  if (Math.abs(remaining) > 1) {
+    lenis.scrollTo(base + remaining, {
+      duration: 0.5,
+      force: true,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+    });
   }
 }
 
@@ -55,16 +69,16 @@ export default function AboutSection() {
   } = aboutData.aboutSection;
 
   const statsRef = useRef(null);
+  const anchorRef = useRef(null);
   const pinContainerRef = useRef(null);
   const lastScrollY = useRef(0);
   const modeRef = useRef("pin");
-  const contentTopRef = useRef(null);
 
   const [isScrolled, setIsScrolled] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [showEyebrow, setShowEyebrow] = useState(false);
   const [showCoreValues, setShowCoreValues] = useState(false);
-  const [mode, setMode] = useState("pin"); // "pin" = top->bottom, "free" = scrolled up
+  const [mode, setMode] = useState("pin"); // "pin" = top->bottom, "free" = scrolled past / up
 
   const allStats = useMemo(
     () => (experience ? [experience, ...stats] : stats),
@@ -171,12 +185,25 @@ export default function AboutSection() {
       const total = rect.height - vh;
       if (total <= 0) return;
 
+      // 1) Silent switch: section is completely above the viewport (passed going down)
+      if (rect.bottom <= 0) {
+        anchorRef.current = { kind: "bottom", value: rect.bottom };
+        modeRef.current = "free";
+        setMode("free");
+        setShowEyebrow(true);
+        setShowCoreValues(true);
+        return;
+      }
+
+      // 2) Fallback: user reversed direction while still inside the section
       const isPinned = rect.top <= 0 && rect.bottom > vh;
       const isAfter = rect.top <= 0 && rect.bottom <= vh;
 
-      // Scrolling up while pinned / just released -> drop the pin + animation
       if (goingUp && (isPinned || isAfter)) {
-        contentTopRef.current = isPinned ? 0 : rect.bottom - vh;
+        anchorRef.current = {
+          kind: "top",
+          value: isPinned ? 0 : rect.bottom - vh,
+        };
         modeRef.current = "free";
         setMode("free");
         setShowEyebrow(true);
@@ -206,17 +233,20 @@ export default function AboutSection() {
     };
   }, []);
 
-  // After collapsing to free mode, keep the content exactly where it was on screen
+  // After switching to free mode, keep the page visually still
   useLayoutEffect(() => {
-    if (mode !== "free" || contentTopRef.current == null) return;
+    if (mode !== "free" || !anchorRef.current) return;
 
     const el = pinContainerRef.current;
     if (!el) return;
 
-    const before = contentTopRef.current;
-    contentTopRef.current = null;
+    const { kind, value } = anchorRef.current;
+    anchorRef.current = null;
 
-    const diff = el.getBoundingClientRect().top - before;
+    const rect = el.getBoundingClientRect();
+    const now = kind === "bottom" ? rect.bottom : rect.top;
+    const diff = now - value;
+
     if (diff !== 0) shiftScroll(diff);
   }, [mode]);
 

@@ -1,94 +1,171 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
+
+// Lenis-aware scroll shift that keeps the remaining momentum
+function shiftScroll(diff) {
+  const lenis = typeof window !== "undefined" ? window.__lenis : null;
+
+  if (!lenis) {
+    window.scrollBy(0, diff);
+    return;
+  }
+
+  // Distance Lenis was still going to travel (the momentum we don't want to lose)
+  const remaining = (lenis.targetScroll ?? lenis.scroll) - lenis.scroll;
+
+  lenis.resize();
+  const base = lenis.scroll + diff;
+  lenis.scrollTo(base, { immediate: true, force: true });
+
+  // Re-apply the leftover momentum so the scroll keeps flowing
+  if (Math.abs(remaining) > 1) {
+    lenis.scrollTo(base + remaining, {
+      duration: 0.5,
+      force: true,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+    });
+  }
+}
 
 export default function MiningOverviewAnimated({ data }) {
   const containerRef = useRef(null);
+  const anchorRef = useRef(null); // reference point used to keep the page still when collapsing
   const lastScrollY = useRef(0);
+  const modeRef = useRef("pin");
 
-  const [progress, setProgress] = useState(0);
-  const [isUpwardFlow, setIsUpwardFlow] = useState(false);
+  const [mode, setMode] = useState("pin"); // "pin" = top->bottom, "free" = passed / scrolled up
+  const [shifted, setShifted] = useState(false);
 
   useEffect(() => {
-    const handleScroll = () => {
-      if (!containerRef.current) return;
+    let ticking = false;
+
+    const update = () => {
+      ticking = false;
+
       if (window.innerWidth < 768) return;
 
-      const currentScrollY = window.scrollY;
-      const isScrollingUp = currentScrollY < lastScrollY.current;
-      const isScrollingDown = currentScrollY > lastScrollY.current;
-      lastScrollY.current = currentScrollY;
+      const el = containerRef.current;
+      if (!el) return;
 
-      const rect = containerRef.current.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const totalScrollable = containerRef.current.clientHeight - viewportHeight;
+      const currentY = window.scrollY;
+      const goingUp = currentY < lastScrollY.current;
+      lastScrollY.current = currentY;
 
-      if (totalScrollable <= 0) return;
+      const rect = el.getBoundingClientRect();
+      const vh = window.innerHeight;
 
-      // 1. Entering or moving upward through the section from below
-      if (isScrollingUp && rect.top < 0) {
-        setIsUpwardFlow(true);
-      }
-
-      // 2. User reverses direction to scroll DOWN again
-      if (isScrollingDown && isUpwardFlow) {
-        setIsUpwardFlow(false);
-      }
-
-      // 3. Reset progress when scrolled above the animation entry point
-      if (rect.top >= 0) {
-        setIsUpwardFlow(false);
-        setProgress(0);
+      /* ---------- FREE MODE ---------- */
+      if (modeRef.current === "free") {
+        // Re-arm only once the section is fully below the viewport
+        if (rect.top >= vh) {
+          modeRef.current = "pin";
+          setMode("pin");
+          setShifted(false);
+        }
         return;
       }
 
-      // Calculate scroll progress for down-scroll
-      const currentScroll = -rect.top;
-      const rawProgress = Math.min(
-        Math.max(currentScroll / totalScrollable, 0),
-        1
-      );
+      /* ---------- PIN MODE ---------- */
+      const total = rect.height - vh;
+      if (total <= 0) return;
 
-      setProgress(rawProgress);
+      // 1) Silent switch: section is completely above the viewport (passed going down)
+      if (rect.bottom <= 0) {
+        anchorRef.current = { kind: "bottom", value: rect.bottom };
+        modeRef.current = "free";
+        setMode("free");
+        setShifted(true);
+        return;
+      }
+
+      // 2) Fallback: user reversed direction while still inside the section
+      const isPinned = rect.top <= 0 && rect.bottom > vh;
+      const isAfter = rect.top <= 0 && rect.bottom <= vh;
+
+      if (goingUp && (isPinned || isAfter)) {
+        anchorRef.current = {
+          kind: "top",
+          value: isPinned ? 0 : rect.bottom - vh,
+        };
+        modeRef.current = "free";
+        setMode("free");
+        setShifted(true);
+        return;
+      }
+
+      if (rect.top >= 0) {
+        setShifted(false);
+        return;
+      }
+
+      const progress = Math.min(Math.max(-rect.top / total, 0), 1);
+      setShifted(progress > 0.05);
     };
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    handleScroll();
+    const onScroll = () => {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(update);
+      }
+    };
 
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [isUpwardFlow]);
+    lastScrollY.current = window.scrollY;
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
 
-  // When scrolling down, activate animation once progress crosses threshold.
-  // When scrolling up, keep shifted state static without animations.
-  const isShifted = isUpwardFlow || progress > 0.05;
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
+
+  // After switching to free mode, keep the page visually still
+  useLayoutEffect(() => {
+    if (mode !== "free" || !anchorRef.current) return;
+
+    const el = containerRef.current;
+    if (!el) return;
+
+    const { kind, value } = anchorRef.current;
+    anchorRef.current = null;
+
+    const rect = el.getBoundingClientRect();
+    const now = kind === "bottom" ? rect.bottom : rect.top;
+    const diff = now - value;
+
+    if (diff !== 0) shiftScroll(diff);
+  }, [mode]);
+
+  const isPinMode = mode === "pin";
+  const fade = isPinMode ? "transition-all duration-500 ease-out" : "transition-none";
+  const imageFade = isPinMode
+    ? "transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]"
+    : "transition-none";
 
   return (
     <div
       ref={containerRef}
       className={`relative w-full bg-white ${
-        isUpwardFlow ? "h-auto py-12 md:py-20" : "md:h-[105vh]"
+        isPinMode ? "md:h-[105vh]" : "md:py-20"
       }`}
     >
       <div
         className={`flex w-full items-center justify-center px-4 py-4 sm:px-6 lg:px-8 ${
-          isUpwardFlow
-            ? "relative h-auto md:py-0"
-            : "md:sticky md:top-0 md:h-screen md:overflow-hidden md:py-0"
+          isPinMode
+            ? "md:sticky md:top-0 md:h-screen md:overflow-hidden md:py-0"
+            : "relative md:py-0"
         }`}
       >
         <div className="relative mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-6 md:grid-cols-2 md:gap-12 lg:gap-16">
-          
           {/* HEADING (Left Column on Desktop) */}
           <div
-            className={`order-1 md:order-1 ${
-              isUpwardFlow
-                ? "!transition-none !transform-none !opacity-100 !pointer-events-auto"
-                : "transition-all duration-500 ease-out"
-            } ${
-              isShifted
+            className={`order-1 md:order-1 ${fade} ${
+              shifted
                 ? "opacity-100 md:translate-x-0"
-                : "opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none md:-translate-x-8"
+                : "opacity-100 pointer-events-auto md:pointer-events-none md:-translate-x-8 md:opacity-0"
             }`}
           >
             <h2 className="mb-1.5 text-3xl font-normal leading-tight tracking-tight text-[#dc5835] sm:text-4xl lg:text-5xl">
@@ -98,20 +175,16 @@ export default function MiningOverviewAnimated({ data }) {
             </h2>
 
             {/* Desktop Description */}
-            <p className="hidden mt-2 max-w-3xl text-base leading-relaxed text-gray-600 sm:text-lg md:block">
+            <p className="mt-2 hidden max-w-3xl text-base leading-relaxed text-gray-600 sm:text-lg md:block">
               {data.description}
             </p>
           </div>
 
           {/* IMAGE CONTAINER (Right Column on Desktop) */}
-          <div className="order-2 relative h-[280px] w-full sm:h-[360px] md:order-2 md:z-10 lg:h-[400px]">
+          <div className="relative order-2 h-[280px] w-full sm:h-[360px] md:order-2 md:z-10 lg:h-[400px]">
             <div
-              className={`relative h-full w-full overflow-hidden rounded-xs bg-white md:absolute md:inset-0 ${
-                isUpwardFlow
-                  ? "!transition-none !transform-none"
-                  : "transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]"
-              } ${
-                isShifted
+              className={`relative h-full w-full overflow-hidden rounded-xs bg-white md:absolute md:inset-0 ${imageFade} ${
+                shifted
                   ? "md:translate-x-0"
                   : "md:-translate-x-1/2 md:lg:-translate-x-[calc(50%+2rem)]"
               }`}
@@ -133,7 +206,6 @@ export default function MiningOverviewAnimated({ data }) {
               {data.description}
             </p>
           </div>
-
         </div>
       </div>
     </div>
