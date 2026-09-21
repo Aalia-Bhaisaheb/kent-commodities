@@ -1,8 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Image from "next/image";
 import { aboutData } from "@/data/about";
+
+function shiftScroll(diff) {
+  const lenis = typeof window !== "undefined" ? window.__lenis : null;
+
+  if (lenis) {
+    lenis.resize(); // pick up the new document height first
+    lenis.scrollTo(lenis.scroll + diff, { immediate: true, force: true });
+  } else {
+    window.scrollBy(0, diff);
+  }
+}
 
 function parseStatNumber(value) {
   const text = String(value);
@@ -39,13 +56,16 @@ export default function AboutSection() {
 
   const statsRef = useRef(null);
   const pinContainerRef = useRef(null);
+  const lastScrollY = useRef(0);
+  const modeRef = useRef("pin");
+  const contentTopRef = useRef(null);
 
   const [isScrolled, setIsScrolled] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [showEyebrow, setShowEyebrow] = useState(false);
   const [showCoreValues, setShowCoreValues] = useState(false);
+  const [mode, setMode] = useState("pin"); // "pin" = top->bottom, "free" = scrolled up
 
-  // Fixed list: experience first (if present). Never changes length.
   const allStats = useMemo(
     () => (experience ? [experience, ...stats] : stats),
     [experience, stats],
@@ -60,7 +80,7 @@ export default function AboutSection() {
     parsedStats.map(() => 0),
   );
 
-  // Scrolled flag (only re-renders when the boolean flips)
+  // Scrolled flag
   useEffect(() => {
     const onScroll = () => setIsScrolled(window.scrollY > 140);
     onScroll();
@@ -115,21 +135,54 @@ export default function AboutSection() {
     return () => cancelAnimationFrame(frame);
   }, [hasStarted, parsedStats]);
 
-  // Pinned reveal: scroll only drives two booleans. Pinning itself is CSS sticky.
+  // Pin/free switching + reveal progress
   useEffect(() => {
     let ticking = false;
 
     const update = () => {
       ticking = false;
+
+      const currentY = window.scrollY;
+      const goingUp = currentY < lastScrollY.current;
+      lastScrollY.current = currentY;
+
       const el = pinContainerRef.current;
       if (!el) return;
 
-      // Mobile: no pin. Classes below keep everything visible.
+      // Mobile: no pin, nothing hidden
       if (window.innerWidth < 768) return;
 
       const rect = el.getBoundingClientRect();
-      const total = rect.height - window.innerHeight;
+      const vh = window.innerHeight;
+
+      /* ---------- FREE MODE ---------- */
+      if (modeRef.current === "free") {
+        // Re-arm only once the section is fully below the viewport
+        if (rect.top >= vh) {
+          modeRef.current = "pin";
+          setMode("pin");
+          setShowEyebrow(false);
+          setShowCoreValues(false);
+        }
+        return;
+      }
+
+      /* ---------- PIN MODE ---------- */
+      const total = rect.height - vh;
       if (total <= 0) return;
+
+      const isPinned = rect.top <= 0 && rect.bottom > vh;
+      const isAfter = rect.top <= 0 && rect.bottom <= vh;
+
+      // Scrolling up while pinned / just released -> drop the pin + animation
+      if (goingUp && (isPinned || isAfter)) {
+        contentTopRef.current = isPinned ? 0 : rect.bottom - vh;
+        modeRef.current = "free";
+        setMode("free");
+        setShowEyebrow(true);
+        setShowCoreValues(true);
+        return;
+      }
 
       const progress = Math.min(Math.max(-rect.top / total, 0), 1);
       setShowEyebrow(progress >= 0.35);
@@ -143,6 +196,7 @@ export default function AboutSection() {
       }
     };
 
+    lastScrollY.current = window.scrollY;
     update();
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
@@ -151,6 +205,27 @@ export default function AboutSection() {
       window.removeEventListener("resize", onScroll);
     };
   }, []);
+
+  // After collapsing to free mode, keep the content exactly where it was on screen
+  useLayoutEffect(() => {
+    if (mode !== "free" || contentTopRef.current == null) return;
+
+    const el = pinContainerRef.current;
+    if (!el) return;
+
+    const before = contentTopRef.current;
+    contentTopRef.current = null;
+
+    const diff = el.getBoundingClientRect().top - before;
+    if (diff !== 0) shiftScroll(diff);
+  }, [mode]);
+
+  const isPinMode = mode === "pin";
+
+  // No transitions in free mode so content appears instantly
+  const eyebrowFade = isPinMode
+    ? "transition-all duration-700 ease-out"
+    : "transition-none";
 
   return (
     <section
@@ -176,8 +251,6 @@ export default function AboutSection() {
             const isFifthItem = index === 4;
             const isExperience = Boolean(experience) && index === 0;
 
-            // Mobile: experience shown, 5th item hidden.
-            // Desktop: experience only shown after scroll; 5th item always shown.
             let visibility = "flex";
             if (isFifthItem) visibility = "hidden md:flex";
             else if (isExperience && !isScrolled) visibility = "flex md:hidden";
@@ -201,9 +274,16 @@ export default function AboutSection() {
         </div>
       </div>
 
-      {/* Pinned section: tall container + sticky child */}
-      <div ref={pinContainerRef} className="relative w-full md:h-[300vh]">
-        <div className="relative flex w-full flex-col justify-center py-12 md:sticky md:top-0 md:h-screen md:py-0">
+      {/* Pinned section (pin mode) / normal flow (free mode) */}
+      <div
+        ref={pinContainerRef}
+        className={`relative w-full ${isPinMode ? "md:h-[300vh]" : ""}`}
+      >
+        <div
+          className={`relative flex w-full flex-col justify-center py-12 ${
+            isPinMode ? "md:sticky md:top-0 md:h-screen md:py-0" : "md:py-12"
+          }`}
+        >
           <div className="mx-auto flex w-full max-w-7xl flex-col justify-between px-4 sm:px-6 lg:px-8">
             {/* Middle Section */}
             <div className="mx-auto flex max-w-3xl flex-col items-center pb-6 pt-6 text-center md:pb-8 md:pt-12">
@@ -218,13 +298,13 @@ export default function AboutSection() {
               </p>
 
               <div
-                className={`my-5 h-8 w-px bg-gray-300 transition-opacity duration-700 ease-out sm:my-6 sm:h-10 ${
+                className={`my-5 h-8 w-px bg-gray-300 sm:my-6 sm:h-10 ${eyebrowFade} ${
                   showEyebrow ? "md:opacity-100" : "md:opacity-0"
                 }`}
               />
 
               <p
-                className={`text-xs font-medium uppercase tracking-[0.2em] text-[#dc5835] transition-all duration-700 ease-out sm:text-[13px] ${
+                className={`text-xs font-medium uppercase tracking-[0.2em] text-[#dc5835] sm:text-[13px] ${eyebrowFade} ${
                   showEyebrow
                     ? "md:translate-y-0 md:opacity-100"
                     : "md:translate-y-3 md:opacity-0"
@@ -241,9 +321,10 @@ export default function AboutSection() {
                   <div
                     key={value.title || index}
                     style={{
-                      transitionDelay: showCoreValues ? `${index * 80}ms` : "0ms",
+                      transitionDelay:
+                        isPinMode && showCoreValues ? `${index * 80}ms` : "0ms",
                     }}
-                    className={`group flex transform flex-col items-center justify-center px-4 py-4 text-center transition-all duration-700 ease-out md:py-2 ${
+                    className={`group flex transform flex-col items-center justify-center px-4 py-4 text-center md:py-2 ${eyebrowFade} ${
                       showCoreValues
                         ? "md:translate-y-0 md:opacity-100"
                         : "md:translate-y-3 md:opacity-0"
