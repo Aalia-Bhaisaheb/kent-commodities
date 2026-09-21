@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { agriculturalProductsData } from "@/data/agricultureData";
 
 export default function AgriculturalProducts({
@@ -94,7 +95,7 @@ export default function AgriculturalProducts({
   const activeProduct = products[activeIndex];
 
   return (
-    <section className="w-full overflow-hidden bg-white px-4 lg:py-16 py-16">
+    <section className="w-full overflow-hidden bg-white px-4 py-16 lg:py-16">
       <div className="mx-auto w-full max-w-7xl">
         {/* Heading */}
         <h2 className="text-center text-3xl font-normal leading-[1.2] tracking-tight text-[#dc5835] sm:text-4xl lg:text-[42px]">
@@ -114,9 +115,9 @@ export default function AgriculturalProducts({
             type="button"
             onClick={previousProduct}
             aria-label="Previous product"
-            className="absolute left-4 z-[60] flex h-10 w-10 items-center justify-center rounded-full bg-white text-2xl text-gray-700 shadow-md transition hover:bg-gray-100"
+            className="absolute left-4 z-[60] flex h-10 w-10 items-center justify-center rounded-full bg-[#567425] hover:bg-[#48631f] text-white shadow-md transition "
           >
-            ‹
+            <ChevronLeft className="h-5 w-5" strokeWidth={2.5} />
           </button>
 
           {products.map((product, index) => {
@@ -182,9 +183,9 @@ export default function AgriculturalProducts({
             type="button"
             onClick={nextProduct}
             aria-label="Next product"
-            className="absolute right-4 z-[60] flex h-10 w-10 items-center justify-center rounded-full bg-white text-2xl text-gray-700 shadow-md transition hover:bg-gray-100"
+            className="absolute right-4 z-[60] flex h-10 w-10 items-center justify-center rounded-full bg-[#567425] hover:bg-[#48631f] text-white shadow-md transition"
           >
-            ›
+            <ChevronRight className="h-5 w-5" strokeWidth={2.5} />
           </button>
         </div>
 
@@ -215,9 +216,9 @@ export default function AgriculturalProducts({
                 type="button"
                 onClick={previousProduct}
                 aria-label="Previous product"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-xl text-gray-700"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2e7d32] text-white transition hover:bg-[#48631f]"
               >
-                ‹
+                <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
               </button>
 
               <div className="flex gap-1.5">
@@ -240,9 +241,9 @@ export default function AgriculturalProducts({
                 type="button"
                 onClick={nextProduct}
                 aria-label="Next product"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-xl text-gray-700"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#567425] hover:bg-[#48631f] text-white transition"
               >
-                ›
+                <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
               </button>
             </div>
           </div>

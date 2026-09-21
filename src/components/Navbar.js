@@ -58,7 +58,7 @@ export default function Navbar() {
           {/* Logo */}
           <div className="flex items-center">
             <Link href="/" className="flex items-center group">
-              <div className="relative h-9 sm:h-10 md:h-11 w-40 sm:w-44 md:w-48 transition-transform duration-200 group-hover:scale-[1.02]">
+              <div className="relative h-6 sm:h-8 md:h-8 w-40 sm:w-44 md:w-48 transition-transform duration-200 group-hover:scale-[1.02]">
                 <Image
                   src="/logo.svg"
                   alt="Kent Commodities"

@@ -9,6 +9,7 @@ export default function VisionMissionSection() {
 
   const pinContainerRef = useRef(null);
   const lastScrollY = useRef(0);
+  const tickingRef = useRef(false);
 
   const [isDesktop, setIsDesktop] = useState(false);
   const [scrollDir, setScrollDir] = useState("down");
@@ -31,25 +32,6 @@ export default function VisionMissionSection() {
     return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
 
-  // Track global scroll direction
-  useEffect(() => {
-    const handleScrollDir = () => {
-      const currentScrollY = window.scrollY;
-
-      if (currentScrollY < lastScrollY.current) {
-        setScrollDir("up");
-      } else if (currentScrollY > lastScrollY.current) {
-        setScrollDir("down");
-      }
-
-      lastScrollY.current = currentScrollY;
-    };
-
-    handleScrollDir();
-    window.addEventListener("scroll", handleScrollDir, { passive: true });
-    return () => window.removeEventListener("scroll", handleScrollDir);
-  }, []);
-
   // Entrance observer: Trigger on top-to-bottom enter, reset when scrolled above
   useEffect(() => {
     if (!isDesktop) {
@@ -63,14 +45,10 @@ export default function VisionMissionSection() {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          if (scrollDir === "down") {
-            setSectionEntered(true);
-          }
-        } else {
+          setSectionEntered(true);
+        } else if (entry.boundingClientRect.top > 0) {
           // Reset animation state when scrolled back above section
-          if (entry.boundingClientRect.top > 0) {
-            setSectionEntered(false);
-          }
+          setSectionEntered(false);
         }
       },
       { threshold: 0.05 }
@@ -78,17 +56,32 @@ export default function VisionMissionSection() {
 
     observer.observe(element);
     return () => observer.disconnect();
-  }, [isDesktop, scrollDir]);
+  }, [isDesktop]);
 
-  // Handle pin status calculation
+  // Single rAF-throttled scroll handler: tracks direction AND pin math together,
+  // and never changes layout height/position based on direction (that was
+  // causing the document height to collapse mid-scroll and produce jumps).
   useEffect(() => {
-    if (!isDesktop) {
-      setPinStatus("before");
-      setScrollProgress(0);
-      return;
-    }
+    const update = () => {
+      tickingRef.current = false;
 
-    const handlePinScroll = () => {
+      const currentScrollY = window.scrollY;
+      let dir = scrollDir;
+      if (currentScrollY < lastScrollY.current) {
+        dir = "up";
+        setScrollDir("up");
+      } else if (currentScrollY > lastScrollY.current) {
+        dir = "down";
+        setScrollDir("down");
+      }
+      lastScrollY.current = currentScrollY;
+
+      if (!isDesktop) {
+        setPinStatus("before");
+        setScrollProgress(0);
+        return;
+      }
+
       const el = pinContainerRef.current;
       if (!el) return;
 
@@ -96,20 +89,8 @@ export default function VisionMissionSection() {
       const viewportHeight = window.innerHeight;
       const total = rect.height - viewportHeight;
 
-      setContainerRect({
-        left: rect.left,
-        width: rect.width,
-      });
+      setContainerRect({ left: rect.left, width: rect.width });
 
-      // When scrolling UP, skip calculating pinned state
-      if (scrollDir === "up") {
-        setPinStatus("before");
-        setScrollProgress(1);
-        setSectionEntered(true);
-        return;
-      }
-
-      // Scrolling DOWN pin state calculations
       if (total <= 0) {
         setPinStatus("before");
         setScrollProgress(0);
@@ -124,35 +105,41 @@ export default function VisionMissionSection() {
         setScrollProgress(1);
       } else {
         setPinStatus("pinned");
-
         const scrolled = -rect.top;
         const progress = Math.min(Math.max(scrolled / total, 0), 1);
         setScrollProgress(progress);
       }
     };
 
-    handlePinScroll();
+    const onScroll = () => {
+      if (!tickingRef.current) {
+        tickingRef.current = true;
+        requestAnimationFrame(update);
+      }
+    };
 
-    window.addEventListener("scroll", handlePinScroll, { passive: true });
-    window.addEventListener("resize", handlePinScroll);
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
 
     return () => {
-      window.removeEventListener("scroll", handlePinScroll);
-      window.removeEventListener("resize", handlePinScroll);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
     };
-  }, [isDesktop, scrollDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDesktop]);
 
   const isScrollingUp = scrollDir === "up";
 
-  // Visible during down-scroll progress OR fully static when scrolling up
+  // Visible during down-scroll progress, or instantly visible when scrolling up.
+  // NOTE: this only affects opacity/transform classes below, never layout/height.
   const showVision = !isDesktop || isScrollingUp || scrollProgress >= 0.1;
   const showMission = !isDesktop || isScrollingUp || scrollProgress >= 0.55;
 
-  // Wrapper positioning rules
+  // Wrapper positioning is driven purely by pinStatus (rect-based), which is
+  // correct in both scroll directions on its own — no direction special-casing.
   let wrapperStyle;
-
-  if (!isDesktop || isScrollingUp) {
-    // When scrolling up, revert wrapper to standard static layout flow
+  if (!isDesktop) {
     wrapperStyle = { position: "relative" };
   } else if (pinStatus === "pinned") {
     wrapperStyle = {
@@ -180,17 +167,11 @@ export default function VisionMissionSection() {
   return (
     <div
       ref={pinContainerRef}
-      className={`relative w-full bg-[#f7f8fa] ${
-        isScrollingUp ? "min-h-0 lg:h-auto lg:py-20" : "min-h-screen lg:h-[220vh]"
-      }`}
+      className="relative w-full min-h-screen bg-[#f7f8fa] lg:h-[220vh]"
     >
       <div
         style={wrapperStyle}
-        className={`flex w-full items-center justify-center ${
-          isScrollingUp
-            ? "py-0"
-            : "min-h-screen overflow-visible lg:overflow-hidden"
-        }`}
+        className="flex w-full min-h-screen items-center justify-center overflow-visible lg:overflow-hidden"
       >
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">

@@ -71,7 +71,7 @@ export default function CustomerTestimonialsSection({
   data = customerTestimonials,
 }) {
   return (
-    <section className="w-full overflow-hidden bg-white px-4 lg:py-16 py-8 sm:px-6 sm:py-20 lg:px-8">
+    <section className="w-full overflow-hidden bg-white px-4 py-8 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
       <div className="mx-auto max-w-7xl">
         {/* Header */}
         <motion.div
@@ -79,11 +79,11 @@ export default function CustomerTestimonialsSection({
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, amount: 0.3 }}
-          className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:gap-16"
+          className="grid grid-cols-1 items-start gap-4 sm:gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:gap-16"
         >
           <motion.h2
             variants={headingReveal}
-            className=" text-3xl font-normal leading-tight tracking-tight text-[#dc5835] sm:text-4xl lg:text-[40px]"
+            className="text-2xl font-normal leading-tight tracking-tight text-[#dc5835] xs:text-3xl sm:text-4xl lg:text-[40px]"
           >
             {data.title}
           </motion.h2>
@@ -102,7 +102,7 @@ export default function CustomerTestimonialsSection({
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, amount: 0.15 }}
-          className="mt-12 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mt-14 sm:gap-4"
+          className="mt-8 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mt-12 sm:gap-4 lg:mt-14"
         >
           {data.testimonials.map((testimonial) => (
             <motion.article
@@ -115,24 +115,26 @@ export default function CustomerTestimonialsSection({
                 duration: 0.45,
                 ease: [0.22, 1, 0.36, 1],
               }}
-              className="min-h-[190px] w-[285px] shrink-0 snap-start bg-[#f7f8fa] px-5 py-5 shadow-sm transition-shadow duration-500 hover:shadow-[0_12px_30px_rgba(0,0,0,0.06)] sm:w-[310px] sm:px-6 sm:py-6"
+              className="flex min-h-[190px] w-[260px] shrink-0 snap-start flex-col justify-between bg-[#f7f8fa] px-4 py-5 xs:w-[285px] xs:px-5 sm:w-[310px] sm:px-6 sm:py-6"
             >
-              <header>
-                <h3 className="text-sm font-medium tracking-tight text-gray-800">
-                  {testimonial.name}
-                </h3>
+              <div>
+                <header>
+                  <h3 className="text-xs font-medium tracking-tight text-gray-800 sm:text-sm">
+                    {testimonial.name}
+                  </h3>
 
-                <p className="mt-1 text-[10px] text-gray-500">
-                  {testimonial.role}
-                </p>
-              </header>
+                  <p className="mt-0.5 text-[10px] text-gray-500 sm:mt-1">
+                    {testimonial.role}
+                  </p>
+                </header>
 
-              <blockquote className="mt-5 text-[11px] leading-relaxed text-gray-600 sm:text-xs">
-                {testimonial.quote}
-              </blockquote>
+                <blockquote className="mt-4 text-[11px] leading-relaxed text-gray-600 sm:mt-5 sm:text-xs">
+                  {testimonial.quote}
+                </blockquote>
+              </div>
 
               <div
-                className="mt-5 flex gap-0.5 text-sm leading-none text-[#f5c400]"
+                className="mt-4 flex gap-0.5 text-xs leading-none text-[#f5c400] sm:mt-5 sm:text-sm"
                 aria-label={testimonial.ratingLabel}
                 role="img"
               >

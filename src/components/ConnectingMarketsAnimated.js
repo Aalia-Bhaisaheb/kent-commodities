@@ -7,7 +7,6 @@ import Button from "@/components/Button";
 export default function ConnectingMarketsAnimated({ data }) {
   const sectionRef = useRef(null);
   const [isVisible, setIsVisible] = useState(false);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -26,18 +25,6 @@ export default function ConnectingMarketsAnimated({ data }) {
 
     return () => observer.disconnect();
   }, []);
-
-  // Subtle interactive parallax shift on mouse move over the image
-  const handleMouseMove = (e) => {
-    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - left) / width - 0.5;
-    const y = (e.clientY - top) / height - 0.5;
-    setMousePos({ x, y });
-  };
-
-  const handleMouseLeave = () => {
-    setMousePos({ x: 0, y: 0 });
-  };
 
   return (
     <section
@@ -59,23 +46,16 @@ export default function ConnectingMarketsAnimated({ data }) {
           {data.headingPart2}
         </h2>
 
-        {/* ================= IMAGE: PARALLAX & SCROLL REVEAL (MOBILE: ORDER 2) ================= */}
+        {/* ================= IMAGE: SCROLL REVEAL (MOBILE: ORDER 2) ================= */}
         <div
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-          className={`order-2 lg:order-none w-full group relative h-64 overflow-hidden rounded-lg sm:h-80 lg:h-108 transition-all duration-1000 ease-out cursor-pointer ${
+          className={`order-2 lg:order-none w-full group relative h-64 overflow-hidden rounded-lg sm:h-80 lg:h-108 transition-all duration-1000 ease-out ${
             isVisible
               ? "translate-y-0 opacity-100 scale-100"
               : "translate-y-16 opacity-0 scale-95"
           }`}
         >
-          {/* Main Photo with Mouse-Tracking Parallax */}
-          <div
-            className="relative h-full w-full transition-transform duration-300 ease-out"
-            style={{
-              transform: `scale(1.08) translate(${mousePos.x * -15}px, ${mousePos.y * -15}px)`,
-            }}
-          >
+          {/* Main Photo */}
+          <div className="relative h-full w-full">
             <Image
               src={data.image.src}
               alt={data.image.alt}
