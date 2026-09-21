@@ -76,12 +76,12 @@ function AnimatedSection({ children, className = "" }) {
 
 export default function Home() {
   return (
-    <motion.main
-      variants={pageEntrance}
-      initial="hidden"
-      animate="visible"
-      className="min-h-screen overflow-hidden bg-white"
-    >
+<motion.main
+  variants={pageEntrance}
+  initial="hidden"
+  animate="visible"
+  className="min-h-screen overflow-x-clip bg-white"
+>
       {/* Navbar */}
       <Navbar />
 
@@ -89,9 +89,7 @@ export default function Home() {
       <Hero />
 
       {/* About */}
-      <AnimatedSection>
         <AboutSection />
-      </AnimatedSection>
 
       {/* Commodities */}
       <AnimatedSection>
