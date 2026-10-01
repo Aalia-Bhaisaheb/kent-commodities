@@ -28,24 +28,32 @@ const initialThumbnails = [
   },
 ];
 
-// Change video every 9 seconds
-const SLIDE_DURATION = 9000;
+// Time each video stays active
+const SLIDE_DURATION = 8000;
 
-// Smooth transition duration
+// Smooth fade duration
 const TRANSITION_DURATION = 1500;
 
 export default function Hero() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeId, setActiveId] = useState(1);
-  const [isVideoLoaded, setIsVideoLoaded] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // Whether the current video is ready to be displayed
+  const [isVideoReady, setIsVideoReady] = useState(false);
+
+  // Used for smooth slide transition
+  const [isChangingSlide, setIsChangingSlide] = useState(false);
 
   const videoRef = useRef(null);
   const transitionTimeoutRef = useRef(null);
 
   const { experience } = aboutData.aboutSection;
 
-  // Handle scroll detection
+  /*
+   * ---------------------------------------------------------
+   * SCROLL DETECTION
+   * ---------------------------------------------------------
+   */
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 140);
@@ -62,43 +70,92 @@ export default function Hero() {
     };
   }, []);
 
-  // Play video whenever active slide changes
+  /*
+   * ---------------------------------------------------------
+   * VIDEO LOAD / PLAY
+   *
+   * The video remains hidden until it is actually ready.
+   * The fallback image remains visible meanwhile.
+   * ---------------------------------------------------------
+   */
   useEffect(() => {
-    if (!videoRef.current) return;
+    const video = videoRef.current;
 
-    setIsVideoLoaded(false);
+    if (!video) return;
 
-    videoRef.current.load();
+    // New video is not ready yet
+    setIsVideoReady(false);
 
-    const playPromise = videoRef.current.play();
+    const handleCanPlay = () => {
+      // Video has enough data to start playing
+      setIsVideoReady(true);
 
-    if (playPromise !== undefined) {
-      playPromise.catch(() => {
-        setIsVideoLoaded(false);
-      });
-    }
+      const playPromise = video.play();
+
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          // If playback fails, keep showing the image
+          setIsVideoReady(false);
+        });
+      }
+    };
+
+    const handleError = () => {
+      // Video failed to load
+      setIsVideoReady(false);
+    };
+
+    video.addEventListener("canplay", handleCanPlay);
+    video.addEventListener("error", handleError);
+
+    // Start loading the video
+    video.load();
+
+    return () => {
+      video.removeEventListener("canplay", handleCanPlay);
+      video.removeEventListener("error", handleError);
+    };
   }, [activeId]);
 
-  // Automatically change video every 10 seconds
+  /*
+   * ---------------------------------------------------------
+   * CHANGE TO NEXT VIDEO
+   * ---------------------------------------------------------
+   */
+  const handleNextSlide = useCallback(() => {
+    // Start smooth transition
+    setIsChangingSlide(true);
+
+    // Change video after the fade-out has started
+    if (transitionTimeoutRef.current) {
+      clearTimeout(transitionTimeoutRef.current);
+    }
+
+    transitionTimeoutRef.current = setTimeout(() => {
+      setActiveId((prevId) => {
+        const currentIndex = initialThumbnails.findIndex(
+          (thumbnail) => thumbnail.id === prevId
+        );
+
+        const nextIndex =
+          (currentIndex + 1) % initialThumbnails.length;
+
+        return initialThumbnails[nextIndex].id;
+      });
+
+      // Reset transition state
+      setIsChangingSlide(false);
+    }, TRANSITION_DURATION);
+  }, []);
+
+  /*
+   * ---------------------------------------------------------
+   * AUTO SLIDESHOW
+   * ---------------------------------------------------------
+   */
   useEffect(() => {
     const timer = setInterval(() => {
-      setIsTransitioning(true);
-
-      // Wait for fade-out before changing the video
-      transitionTimeoutRef.current = setTimeout(() => {
-        setActiveId((prevId) => {
-          const currentIndex = initialThumbnails.findIndex(
-            (thumbnail) => thumbnail.id === prevId
-          );
-
-          const nextIndex =
-            (currentIndex + 1) % initialThumbnails.length;
-
-          return initialThumbnails[nextIndex].id;
-        });
-
-        setIsTransitioning(false);
-      }, TRANSITION_DURATION / 2);
+      handleNextSlide();
     }, SLIDE_DURATION);
 
     return () => {
@@ -108,28 +165,43 @@ export default function Hero() {
         clearTimeout(transitionTimeoutRef.current);
       }
     };
-  }, []);
+  }, [handleNextSlide]);
 
+  /*
+   * ---------------------------------------------------------
+   * ACTIVE THUMBNAIL
+   * ---------------------------------------------------------
+   */
   const activeThumbnail =
     initialThumbnails.find(
       (thumbnail) => thumbnail.id === activeId
     ) || initialThumbnails[0];
 
-  // Manual thumbnail change
+  /*
+   * ---------------------------------------------------------
+   * MANUAL THUMBNAIL CHANGE
+   * ---------------------------------------------------------
+   */
   const handleThumbnailChange = (id) => {
     if (id === activeId) return;
-
-    setIsTransitioning(true);
 
     if (transitionTimeoutRef.current) {
       clearTimeout(transitionTimeoutRef.current);
     }
 
+    // Start fade
+    setIsChangingSlide(true);
+
     transitionTimeoutRef.current = setTimeout(() => {
-      setIsVideoLoaded(false);
+      // Hide video immediately
+      setIsVideoReady(false);
+
+      // Change slide
       setActiveId(id);
-      setIsTransitioning(false);
-    }, TRANSITION_DURATION / 2);
+
+      // End transition
+      setIsChangingSlide(false);
+    }, TRANSITION_DURATION);
   };
 
   return (
@@ -137,10 +209,17 @@ export default function Hero() {
       id="hero"
       className="relative flex min-h-[100dvh] max-h-[1080px] w-full flex-col justify-between overflow-hidden bg-[#161a15]"
     >
-      {/* Background Hero Video & Image */}
+      {/* =====================================================
+          BACKGROUND
+      ====================================================== */}
       <div className="absolute inset-0 z-0 overflow-hidden">
 
-        {/* Fallback Image */}
+        {/* ---------------------------------------------------
+            FALLBACK IMAGE
+
+            This image ALWAYS remains visible until the video
+            has successfully loaded and started playing.
+        ---------------------------------------------------- */}
         <Image
           key={activeThumbnail.heroSrc}
           src={activeThumbnail.heroSrc}
@@ -149,7 +228,7 @@ export default function Hero() {
           priority
           sizes="100vw"
           className={`object-cover object-center transition-opacity ease-in-out ${
-            isVideoLoaded && !isTransitioning
+            isVideoReady && !isChangingSlide
               ? "opacity-0"
               : "opacity-100"
           }`}
@@ -158,19 +237,22 @@ export default function Hero() {
           }}
         />
 
-        {/* Hero Background Video */}
+        {/* ---------------------------------------------------
+            HERO VIDEO
+
+            Video stays completely transparent until
+            "canplay" confirms that it is ready.
+        ---------------------------------------------------- */}
         <video
           ref={videoRef}
           key={activeThumbnail.videoSrc}
-          autoPlay
           muted
           loop
           playsInline
+          preload="auto"
           poster={activeThumbnail.heroSrc}
-          onLoadedData={() => setIsVideoLoaded(true)}
-          onError={() => setIsVideoLoaded(false)}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity ease-in-out ${
-            isVideoLoaded && !isTransitioning
+            isVideoReady && !isChangingSlide
               ? "opacity-100"
               : "opacity-0"
           }`}
@@ -184,13 +266,17 @@ export default function Hero() {
           />
         </video>
 
-        {/* Overlay Gradients */}
+        {/* ---------------------------------------------------
+            OVERLAYS
+        ---------------------------------------------------- */}
         <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/25 to-transparent" />
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/20" />
       </div>
 
-      {/* Hero Heading */}
+      {/* =====================================================
+          HERO HEADING
+      ====================================================== */}
       <div className="relative z-20 flex w-full flex-1 flex-col justify-center pt-24 sm:pt-28">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <h1 className="leading-[1.15] tracking-tight">
@@ -198,14 +284,16 @@ export default function Hero() {
               Connecting Global Markets
             </span>
 
-            <span className="mt-1.5 block text-2xl font-normal text-[#6d8e18] sm:mt-2 sm:text-3xl md:text-4xl lg:text-[42px] xl:text-[52px]">
+            <span className="mt-1.5 block text-2xl font-normal text-[#6d8e18] sm:mt-2 md:text-4xl lg:text-[42px] xl:text-[52px]">
               With Quality Commodities
             </span>
           </h1>
         </div>
       </div>
 
-      {/* Experience Stat and Thumbnails */}
+      {/* =====================================================
+          EXPERIENCE + THUMBNAILS
+      ====================================================== */}
       <div
         aria-hidden={isScrolled}
         className={`relative z-10 mx-auto w-full max-w-7xl px-4 pb-8 transition-[opacity,transform] duration-700 ease-out sm:px-6 sm:pb-12 lg:px-8 ${
