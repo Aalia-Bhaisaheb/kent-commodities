@@ -43,15 +43,35 @@ const TRANSITION_DURATION = 1800;
 export default function Hero() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeId, setActiveId] = useState(1);
+
+  /*
+   * The image that is currently displayed.
+   *
+   * We keep this separate from activeId so that the image
+   * does not get replaced during the transition.
+   */
+  const [backgroundId, setBackgroundId] = useState(1);
+
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [isChangingSlide, setIsChangingSlide] = useState(false);
 
   const videoRef = useRef(null);
+
   const timerRef = useRef(null);
   const transitionTimeoutRef = useRef(null);
   const videoTimerStartedRef = useRef(false);
 
   const { experience } = aboutData.aboutSection;
+
+  const activeThumbnail =
+    initialThumbnails.find(
+      (thumbnail) => thumbnail.id === activeId
+    ) || initialThumbnails[0];
+
+  const backgroundThumbnail =
+    initialThumbnails.find(
+      (thumbnail) => thumbnail.id === backgroundId
+    ) || initialThumbnails[0];
 
   /*
    * SCROLL
@@ -88,9 +108,6 @@ export default function Hero() {
       timerRef.current = null;
     }
 
-    /*
-     * VIDEO CAN PLAY
-     */
     const handleCanPlay = () => {
       const playPromise = video.play();
 
@@ -101,9 +118,6 @@ export default function Hero() {
       }
     };
 
-    /*
-     * VIDEO ACTUALLY STARTED PLAYING
-     */
     const handlePlaying = () => {
       setIsVideoReady(true);
 
@@ -113,10 +127,6 @@ export default function Hero() {
 
       videoTimerStartedRef.current = true;
 
-      /*
-       * Start the 10-second timer
-       * only after the video actually starts.
-       */
       timerRef.current = setTimeout(() => {
         handleNextSlide();
       }, VIDEO_DISPLAY_DURATION);
@@ -126,9 +136,6 @@ export default function Hero() {
       handleNextSlide();
     };
 
-    /*
-     * VIDEO ERROR
-     */
     const handleError = () => {
       setIsVideoReady(false);
       videoTimerStartedRef.current = false;
@@ -161,24 +168,70 @@ export default function Hero() {
 
       videoTimerStartedRef.current = false;
     };
-  }, [activeId]);
+  }, [activeId, backgroundId]);
+
+  /*
+   * CHANGE SLIDE
+   */
+  const startSlideChange = useCallback(
+    (targetId) => {
+      if (targetId === activeId || isChangingSlide) {
+        return;
+      }
+
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+
+      videoTimerStartedRef.current = false;
+
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+        transitionTimeoutRef.current = null;
+      }
+
+      /*
+       * FIRST:
+       * Change the background image immediately.
+       *
+       * The new image is underneath the current video.
+       */
+      setBackgroundId(targetId);
+
+      /*
+       * Fade the CURRENT video/image out.
+       */
+      setIsChangingSlide(true);
+
+      /*
+       * Keep the video hidden during the transition.
+       */
+      setIsVideoReady(false);
+
+      /*
+       * After the slow fade has finished,
+       * make the new slide active.
+       */
+      transitionTimeoutRef.current = setTimeout(() => {
+        setActiveId(targetId);
+
+        /*
+         * The new image is now already visible.
+         * The new video's loading will happen over it.
+         */
+        setIsChangingSlide(false);
+
+        transitionTimeoutRef.current = null;
+      }, TRANSITION_DURATION);
+    },
+    [activeId, isChangingSlide]
+  );
 
   /*
    * NEXT SLIDE
    */
   const handleNextSlide = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-
-    videoTimerStartedRef.current = false;
-
-    if (transitionTimeoutRef.current) {
-      clearTimeout(transitionTimeoutRef.current);
-      transitionTimeoutRef.current = null;
-    }
-
     const currentIndex = initialThumbnails.findIndex(
       (thumbnail) => thumbnail.id === activeId
     );
@@ -186,82 +239,16 @@ export default function Hero() {
     const nextIndex =
       (currentIndex + 1) % initialThumbnails.length;
 
-    const nextId = initialThumbnails[nextIndex].id;
+    const targetId = initialThumbnails[nextIndex].id;
 
-    /*
-     * STEP 1:
-     * Slowly fade OUT the current image/video.
-     */
-    setIsChangingSlide(true);
-    setIsVideoReady(false);
-
-    /*
-     * STEP 2:
-     * Wait until the current slide has completely
-     * faded out before changing the slide.
-     */
-    transitionTimeoutRef.current = setTimeout(() => {
-      setActiveId(nextId);
-
-      /*
-       * Keep the new slide hidden for one frame.
-       * This prevents it from appearing instantly.
-       */
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setIsChangingSlide(false);
-        });
-      });
-
-      transitionTimeoutRef.current = null;
-    }, TRANSITION_DURATION);
-  }, [activeId]);
+    startSlideChange(targetId);
+  }, [activeId, startSlideChange]);
 
   /*
-   * MANUAL THUMBNAIL CHANGE
+   * THUMBNAIL CHANGE
    */
   const handleThumbnailChange = (id) => {
-    if (id === activeId || isChangingSlide) return;
-
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-
-    videoTimerStartedRef.current = false;
-
-    if (transitionTimeoutRef.current) {
-      clearTimeout(transitionTimeoutRef.current);
-      transitionTimeoutRef.current = null;
-    }
-
-    /*
-     * STEP 1:
-     * Fade OUT the current slide first.
-     */
-    setIsChangingSlide(true);
-    setIsVideoReady(false);
-
-    /*
-     * STEP 2:
-     * Change the slide only after the old slide
-     * has completely faded away.
-     */
-    transitionTimeoutRef.current = setTimeout(() => {
-      setActiveId(id);
-
-      /*
-       * STEP 3:
-       * Slowly fade IN the new slide.
-       */
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setIsChangingSlide(false);
-        });
-      });
-
-      transitionTimeoutRef.current = null;
-    }, TRANSITION_DURATION);
+    startSlideChange(id);
   };
 
   /*
@@ -279,11 +266,6 @@ export default function Hero() {
     };
   }, []);
 
-  const activeThumbnail =
-    initialThumbnails.find(
-      (thumbnail) => thumbnail.id === activeId
-    ) || initialThumbnails[0];
-
   return (
     <section
       id="hero"
@@ -292,27 +274,24 @@ export default function Hero() {
       {/* BACKGROUND */}
       <div className="absolute inset-0 z-0 overflow-hidden">
 
-        {/* IMAGE */}
+        {/* =====================================================
+            SINGLE BACKGROUND IMAGE
+            ===================================================== */}
+
         <Image
-          key={activeThumbnail.heroSrc}
-          src={activeThumbnail.heroSrc}
-          alt={activeThumbnail.alt}
+          key={backgroundThumbnail.heroSrc}
+          src={backgroundThumbnail.heroSrc}
+          alt={backgroundThumbnail.alt}
           fill
           priority
           sizes="100vw"
-          className={`object-cover object-center transition-opacity ease-in-out ${
-            isChangingSlide
-              ? "opacity-0"
-              : isVideoReady
-                ? "opacity-0"
-                : "opacity-100"
-          }`}
-          style={{
-            transitionDuration: `${TRANSITION_DURATION}ms`,
-          }}
+          className="object-cover object-center"
         />
 
-        {/* VIDEO */}
+        {/* =====================================================
+            CURRENT VIDEO
+            ===================================================== */}
+
         <video
           ref={videoRef}
           key={activeThumbnail.videoSrc}
@@ -365,7 +344,7 @@ export default function Hero() {
       {/* BOTTOM CONTENT */}
       <div
         aria-hidden={isScrolled}
-        className={`relative z-10 mx-auto w-full max-w-7xl px-4 pb-8 transition-[opacity,transform] duration-700 ease-out sm:px-6 sm:pb-12 lg:px-8 ${
+        className={`relative z-20 mx-auto w-full max-w-7xl px-4 pb-8 transition-[opacity,transform] duration-700 ease-out sm:px-6 sm:pb-12 lg:px-8 ${
           isScrolled
             ? "pointer-events-none translate-y-4 opacity-0"
             : "translate-y-0 opacity-100"
