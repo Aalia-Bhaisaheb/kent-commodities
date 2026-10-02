@@ -11,6 +11,9 @@ const initialThumbnails = [
     heroSrc: "/home/hero-1.png",
     videoSrc: "/home/hero-video-1.mp4",
     alt: "Agriculture Commodities",
+    titleLine1: "Cultivating Global Supply",
+    titleLine2: "Premium Agricultural Harvests",
+    accentColor: "text-[#6d8e18]",
   },
   {
     id: 2,
@@ -18,6 +21,9 @@ const initialThumbnails = [
     heroSrc: "/home/hero-2.png",
     videoSrc: "/home/hero-video-2.mp4",
     alt: "Mining Commodities",
+    titleLine1: "Unearthing Raw Potential",
+    titleLine2: "Essential Mineral Solutions",
+    accentColor: "text-[#dc5835]",
   },
   {
     id: 3,
@@ -25,6 +31,9 @@ const initialThumbnails = [
     heroSrc: "/home/hero-3.png",
     videoSrc: "/home/hero-video-3.mp4",
     alt: "Renewable Energy and Supply",
+    titleLine1: "Sustaining Global Markets",
+    titleLine2: "Quality Grains & Crop Produce",
+    accentColor: "text-[#6d8e18]",
   },
 ];
 
@@ -90,6 +99,9 @@ export default function Hero() {
 
   /*
    * ACTIVE VIDEO
+   *
+   * The 10-second timer starts ONLY
+   * when the video actually starts playing.
    */
   useEffect(() => {
     const video = videoRef.current;
@@ -130,7 +142,8 @@ export default function Hero() {
       videoTimerStartedRef.current = true;
 
       /*
-       * 10 seconds STARTS HERE.
+       * 10 seconds starts exactly when
+       * the video starts playing.
        */
       timerRef.current = setTimeout(() => {
         handleNextSlide();
@@ -175,11 +188,9 @@ export default function Hero() {
   /*
    * NEXT SLIDE
    *
-   * IMPORTANT:
-   * Change the active slide FIRST.
-   *
-   * This prevents the old slide's fallback image
-   * from becoming visible during the transition.
+   * Fade out the current slide first.
+   * Then change the active slide.
+   * Then fade the new slide in.
    */
   const handleNextSlide = useCallback(() => {
     if (timerRef.current) {
@@ -189,35 +200,37 @@ export default function Hero() {
 
     videoTimerStartedRef.current = false;
 
-    const currentIndex = initialThumbnails.findIndex(
-      (thumbnail) => thumbnail.id === activeId
-    );
-
-    const nextIndex =
-      (currentIndex + 1) % initialThumbnails.length;
-
-    const nextId = initialThumbnails[nextIndex].id;
-
     /*
-     * Immediately switch to the NEXT slide.
-     *
-     * The next slide's fallback image is now displayed
-     * while its video loads.
+     * Start fade out
      */
     setIsChangingSlide(true);
-    setIsVideoReady(false);
-    setActiveId(nextId);
 
     /*
-     * After the new slide has appeared,
-     * remove the transition state.
+     * Wait for fade out to finish
      */
-    if (transitionTimeoutRef.current) {
-      clearTimeout(transitionTimeoutRef.current);
-    }
-
     transitionTimeoutRef.current = setTimeout(() => {
-      setIsChangingSlide(false);
+      const currentIndex = initialThumbnails.findIndex(
+        (thumbnail) => thumbnail.id === activeId
+      );
+
+      const nextIndex =
+        (currentIndex + 1) % initialThumbnails.length;
+
+      const nextId = initialThumbnails[nextIndex].id;
+
+      /*
+       * Change to the next slide
+       */
+      setActiveId(nextId);
+
+      /*
+       * Allow the new slide to fade in
+       */
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setIsChangingSlide(false);
+        });
+      });
     }, TRANSITION_DURATION);
   }, [activeId]);
 
@@ -239,17 +252,24 @@ export default function Hero() {
     }
 
     /*
-     * Immediately switch to selected slide.
-     *
-     * This makes the selected slide's image appear
-     * directly instead of showing the previous image.
+     * Fade out current slide
      */
     setIsChangingSlide(true);
-    setIsVideoReady(false);
-    setActiveId(id);
 
     transitionTimeoutRef.current = setTimeout(() => {
-      setIsChangingSlide(false);
+      /*
+       * Change to selected slide
+       */
+      setActiveId(id);
+
+      /*
+       * Fade new slide in
+       */
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setIsChangingSlide(false);
+        });
+      });
     }, TRANSITION_DURATION);
   };
 
@@ -280,7 +300,8 @@ export default function Hero() {
     >
       {/* BACKGROUND */}
       <div className="absolute inset-0 z-0 overflow-hidden">
-        {/* NEXT SLIDE IMAGE */}
+
+        {/* FALLBACK IMAGE */}
         <Image
           key={activeThumbnail.heroSrc}
           src={activeThumbnail.heroSrc}
@@ -289,7 +310,7 @@ export default function Hero() {
           priority
           sizes="100vw"
           className={`object-cover object-center transition-opacity ease-in-out ${
-            isVideoReady
+            isVideoReady && !isChangingSlide
               ? "opacity-0"
               : "opacity-100"
           }`}
@@ -309,7 +330,7 @@ export default function Hero() {
           preload="auto"
           poster={activeThumbnail.heroSrc}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity ease-in-out ${
-            isVideoReady
+            isVideoReady && !isChangingSlide
               ? "opacity-100"
               : "opacity-0"
           }`}
@@ -333,13 +354,17 @@ export default function Hero() {
       <div className="relative z-20 flex w-full flex-1 flex-col justify-center pt-24 sm:pt-28">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <h1 className="leading-[1.15] tracking-tight">
+
             <span className="block text-2xl font-normal text-white sm:text-3xl md:text-4xl lg:text-[42px] xl:text-[40px]">
-              Connecting Global Markets
+              {activeThumbnail.titleLine1}
             </span>
 
-            <span className="mt-1.5 block text-2xl font-normal text-[#6d8e18] sm:mt-2 md:text-4xl lg:text-[42px] xl:text-[52px]">
-              With Quality Commodities
+            <span
+              className={`mt-1.5 block text-2xl font-normal sm:mt-2 md:text-4xl lg:text-[42px] xl:text-[52px] ${activeThumbnail.accentColor}`}
+            >
+              {activeThumbnail.titleLine2}
             </span>
+
           </h1>
         </div>
       </div>
@@ -354,6 +379,7 @@ export default function Hero() {
         }`}
       >
         <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end sm:gap-8">
+
           {/* EXPERIENCE */}
           <div className="flex flex-col">
             <span className="text-4xl font-normal leading-none tracking-tight text-white sm:text-5xl md:text-6xl">
@@ -396,6 +422,7 @@ export default function Hero() {
               );
             })}
           </div>
+
         </div>
       </div>
     </section>
