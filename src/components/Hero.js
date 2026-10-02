@@ -38,7 +38,7 @@ const initialThumbnails = [
 ];
 
 const VIDEO_DISPLAY_DURATION = 10000;
-const TRANSITION_DURATION = 1200;
+const TRANSITION_DURATION = 1800;
 
 export default function Hero() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -73,35 +73,7 @@ export default function Hero() {
   }, []);
 
   /*
-   * PRELOAD VIDEOS
-   */
-  useEffect(() => {
-    const preloadVideos = [];
-
-    initialThumbnails.forEach((thumbnail) => {
-      const video = document.createElement("video");
-
-      video.preload = "auto";
-      video.muted = true;
-      video.playsInline = true;
-      video.src = thumbnail.videoSrc;
-
-      preloadVideos.push(video);
-    });
-
-    return () => {
-      preloadVideos.forEach((video) => {
-        video.removeAttribute("src");
-        video.load();
-      });
-    };
-  }, []);
-
-  /*
    * ACTIVE VIDEO
-   *
-   * The 10-second timer starts ONLY
-   * when the video actually starts playing.
    */
   useEffect(() => {
     const video = videoRef.current;
@@ -142,12 +114,16 @@ export default function Hero() {
       videoTimerStartedRef.current = true;
 
       /*
-       * 10 seconds starts exactly when
-       * the video starts playing.
+       * Start the 10-second timer
+       * only after the video actually starts.
        */
       timerRef.current = setTimeout(() => {
         handleNextSlide();
       }, VIDEO_DISPLAY_DURATION);
+    };
+
+    const handleEnded = () => {
+      handleNextSlide();
     };
 
     /*
@@ -165,6 +141,7 @@ export default function Hero() {
 
     video.addEventListener("canplay", handleCanPlay);
     video.addEventListener("playing", handlePlaying);
+    video.addEventListener("ended", handleEnded);
     video.addEventListener("error", handleError);
 
     if (video.readyState >= 3) {
@@ -174,6 +151,7 @@ export default function Hero() {
     return () => {
       video.removeEventListener("canplay", handleCanPlay);
       video.removeEventListener("playing", handlePlaying);
+      video.removeEventListener("ended", handleEnded);
       video.removeEventListener("error", handleError);
 
       if (timerRef.current) {
@@ -187,10 +165,6 @@ export default function Hero() {
 
   /*
    * NEXT SLIDE
-   *
-   * Fade out the current slide first.
-   * Then change the active slide.
-   * Then fade the new slide in.
    */
   const handleNextSlide = useCallback(() => {
     if (timerRef.current) {
@@ -200,37 +174,46 @@ export default function Hero() {
 
     videoTimerStartedRef.current = false;
 
+    if (transitionTimeoutRef.current) {
+      clearTimeout(transitionTimeoutRef.current);
+      transitionTimeoutRef.current = null;
+    }
+
+    const currentIndex = initialThumbnails.findIndex(
+      (thumbnail) => thumbnail.id === activeId
+    );
+
+    const nextIndex =
+      (currentIndex + 1) % initialThumbnails.length;
+
+    const nextId = initialThumbnails[nextIndex].id;
+
     /*
-     * Start fade out
+     * STEP 1:
+     * Slowly fade OUT the current image/video.
      */
     setIsChangingSlide(true);
+    setIsVideoReady(false);
 
     /*
-     * Wait for fade out to finish
+     * STEP 2:
+     * Wait until the current slide has completely
+     * faded out before changing the slide.
      */
     transitionTimeoutRef.current = setTimeout(() => {
-      const currentIndex = initialThumbnails.findIndex(
-        (thumbnail) => thumbnail.id === activeId
-      );
-
-      const nextIndex =
-        (currentIndex + 1) % initialThumbnails.length;
-
-      const nextId = initialThumbnails[nextIndex].id;
-
-      /*
-       * Change to the next slide
-       */
       setActiveId(nextId);
 
       /*
-       * Allow the new slide to fade in
+       * Keep the new slide hidden for one frame.
+       * This prevents it from appearing instantly.
        */
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           setIsChangingSlide(false);
         });
       });
+
+      transitionTimeoutRef.current = null;
     }, TRANSITION_DURATION);
   }, [activeId]);
 
@@ -238,7 +221,7 @@ export default function Hero() {
    * MANUAL THUMBNAIL CHANGE
    */
   const handleThumbnailChange = (id) => {
-    if (id === activeId) return;
+    if (id === activeId || isChangingSlide) return;
 
     if (timerRef.current) {
       clearTimeout(timerRef.current);
@@ -249,27 +232,35 @@ export default function Hero() {
 
     if (transitionTimeoutRef.current) {
       clearTimeout(transitionTimeoutRef.current);
+      transitionTimeoutRef.current = null;
     }
 
     /*
-     * Fade out current slide
+     * STEP 1:
+     * Fade OUT the current slide first.
      */
     setIsChangingSlide(true);
+    setIsVideoReady(false);
 
+    /*
+     * STEP 2:
+     * Change the slide only after the old slide
+     * has completely faded away.
+     */
     transitionTimeoutRef.current = setTimeout(() => {
-      /*
-       * Change to selected slide
-       */
       setActiveId(id);
 
       /*
-       * Fade new slide in
+       * STEP 3:
+       * Slowly fade IN the new slide.
        */
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           setIsChangingSlide(false);
         });
       });
+
+      transitionTimeoutRef.current = null;
     }, TRANSITION_DURATION);
   };
 
@@ -301,7 +292,7 @@ export default function Hero() {
       {/* BACKGROUND */}
       <div className="absolute inset-0 z-0 overflow-hidden">
 
-        {/* FALLBACK IMAGE */}
+        {/* IMAGE */}
         <Image
           key={activeThumbnail.heroSrc}
           src={activeThumbnail.heroSrc}
@@ -310,9 +301,11 @@ export default function Hero() {
           priority
           sizes="100vw"
           className={`object-cover object-center transition-opacity ease-in-out ${
-            isVideoReady && !isChangingSlide
+            isChangingSlide
               ? "opacity-0"
-              : "opacity-100"
+              : isVideoReady
+                ? "opacity-0"
+                : "opacity-100"
           }`}
           style={{
             transitionDuration: `${TRANSITION_DURATION}ms`,
@@ -325,14 +318,16 @@ export default function Hero() {
           key={activeThumbnail.videoSrc}
           autoPlay
           muted
-          loop
+          loop={false}
           playsInline
           preload="auto"
           poster={activeThumbnail.heroSrc}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity ease-in-out ${
-            isVideoReady && !isChangingSlide
-              ? "opacity-100"
-              : "opacity-0"
+            isChangingSlide
+              ? "opacity-0"
+              : isVideoReady
+                ? "opacity-100"
+                : "opacity-0"
           }`}
           style={{
             transitionDuration: `${TRANSITION_DURATION}ms`,
@@ -354,7 +349,6 @@ export default function Hero() {
       <div className="relative z-20 flex w-full flex-1 flex-col justify-center pt-24 sm:pt-28">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <h1 className="leading-[1.15] tracking-tight">
-
             <span className="block text-2xl font-normal text-white sm:text-3xl md:text-4xl lg:text-[42px] xl:text-[40px]">
               {activeThumbnail.titleLine1}
             </span>
@@ -364,7 +358,6 @@ export default function Hero() {
             >
               {activeThumbnail.titleLine2}
             </span>
-
           </h1>
         </div>
       </div>
@@ -422,7 +415,6 @@ export default function Hero() {
               );
             })}
           </div>
-
         </div>
       </div>
     </section>
