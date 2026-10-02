@@ -44,21 +44,23 @@ export default function Hero() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeId, setActiveId] = useState(1);
 
-  /*
-   * The image that is currently displayed.
-   *
-   * We keep this separate from activeId so that the image
-   * does not get replaced during the transition.
-   */
   const [backgroundId, setBackgroundId] = useState(1);
+  const [videoId, setVideoId] = useState(1);
 
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [isChangingSlide, setIsChangingSlide] = useState(false);
+
+  /*
+   * Controls ONLY the text opacity.
+   * No transform / movement is used.
+   */
+  const [isTextVisible, setIsTextVisible] = useState(true);
 
   const videoRef = useRef(null);
 
   const timerRef = useRef(null);
   const transitionTimeoutRef = useRef(null);
+  const textTimeoutRef = useRef(null);
   const videoTimerStartedRef = useRef(false);
 
   const { experience } = aboutData.aboutSection;
@@ -71,6 +73,11 @@ export default function Hero() {
   const backgroundThumbnail =
     initialThumbnails.find(
       (thumbnail) => thumbnail.id === backgroundId
+    ) || initialThumbnails[0];
+
+  const videoThumbnail =
+    initialThumbnails.find(
+      (thumbnail) => thumbnail.id === videoId
     ) || initialThumbnails[0];
 
   /*
@@ -168,7 +175,7 @@ export default function Hero() {
 
       videoTimerStartedRef.current = false;
     };
-  }, [activeId, backgroundId]);
+  }, [videoId]);
 
   /*
    * CHANGE SLIDE
@@ -179,6 +186,9 @@ export default function Hero() {
         return;
       }
 
+      /*
+       * Stop current video timer.
+       */
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
@@ -186,40 +196,77 @@ export default function Hero() {
 
       videoTimerStartedRef.current = false;
 
+      /*
+       * Clear previous transition timers.
+       */
       if (transitionTimeoutRef.current) {
         clearTimeout(transitionTimeoutRef.current);
         transitionTimeoutRef.current = null;
       }
 
+      if (textTimeoutRef.current) {
+        clearTimeout(textTimeoutRef.current);
+        textTimeoutRef.current = null;
+      }
+
       /*
-       * FIRST:
-       * Change the background image immediately.
+       * --------------------------------------------
+       * TEXT FADE OUT
+       * --------------------------------------------
+       */
+      setIsTextVisible(false);
+
+      /*
+       * --------------------------------------------
+       * CHANGE BACKGROUND
+       * --------------------------------------------
        *
-       * The new image is underneath the current video.
+       * New image goes underneath the current video.
        */
       setBackgroundId(targetId);
 
       /*
-       * Fade the CURRENT video/image out.
+       * Start video transition.
        */
       setIsChangingSlide(true);
 
       /*
-       * Keep the video hidden during the transition.
+       * --------------------------------------------
+       * CHANGE TEXT
+       * --------------------------------------------
+       *
+       * Small delay only so the old text has time
+       * to fade out before the new text appears.
        */
-      setIsVideoReady(false);
-
-      /*
-       * After the slow fade has finished,
-       * make the new slide active.
-       */
-      transitionTimeoutRef.current = setTimeout(() => {
+      textTimeoutRef.current = setTimeout(() => {
         setActiveId(targetId);
 
         /*
-         * The new image is now already visible.
-         * The new video's loading will happen over it.
+         * Force the browser to see the new text as
+         * a separate opacity transition.
          */
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setIsTextVisible(true);
+          });
+        });
+      }, 250);
+
+      /*
+       * --------------------------------------------
+       * CHANGE VIDEO
+       * --------------------------------------------
+       *
+       * Keep old video mounted while it fades out.
+       */
+      transitionTimeoutRef.current = setTimeout(() => {
+        setVideoId(targetId);
+
+        /*
+         * New video starts hidden.
+         */
+        setIsVideoReady(false);
+
         setIsChangingSlide(false);
 
         transitionTimeoutRef.current = null;
@@ -263,6 +310,10 @@ export default function Hero() {
       if (transitionTimeoutRef.current) {
         clearTimeout(transitionTimeoutRef.current);
       }
+
+      if (textTimeoutRef.current) {
+        clearTimeout(textTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -273,13 +324,8 @@ export default function Hero() {
     >
       {/* BACKGROUND */}
       <div className="absolute inset-0 z-0 overflow-hidden">
-
-        {/* =====================================================
-            SINGLE BACKGROUND IMAGE
-            ===================================================== */}
-
+        {/* BACKGROUND IMAGE */}
         <Image
-          key={backgroundThumbnail.heroSrc}
           src={backgroundThumbnail.heroSrc}
           alt={backgroundThumbnail.alt}
           fill
@@ -288,19 +334,16 @@ export default function Hero() {
           className="object-cover object-center"
         />
 
-        {/* =====================================================
-            CURRENT VIDEO
-            ===================================================== */}
-
+        {/* VIDEO */}
         <video
           ref={videoRef}
-          key={activeThumbnail.videoSrc}
+          src={videoThumbnail.videoSrc}
           autoPlay
           muted
           loop={false}
           playsInline
           preload="auto"
-          poster={activeThumbnail.heroSrc}
+          poster={videoThumbnail.heroSrc}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity ease-in-out ${
             isChangingSlide
               ? "opacity-0"
@@ -311,12 +354,7 @@ export default function Hero() {
           style={{
             transitionDuration: `${TRANSITION_DURATION}ms`,
           }}
-        >
-          <source
-            src={activeThumbnail.videoSrc}
-            type="video/mp4"
-          />
-        </video>
+        />
 
         {/* OVERLAYS */}
         <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/25 to-transparent" />
@@ -327,17 +365,35 @@ export default function Hero() {
       {/* HERO CONTENT */}
       <div className="relative z-20 flex w-full flex-1 flex-col justify-center pt-24 sm:pt-28">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h1 className="leading-[1.15] tracking-tight">
-            <span className="block text-2xl font-normal text-white sm:text-3xl md:text-4xl lg:text-[42px] xl:text-[40px]">
-              {activeThumbnail.titleLine1}
-            </span>
+          {/*
+            TEXT FADE ONLY
 
-            <span
-              className={`mt-1.5 block text-2xl font-normal sm:mt-2 md:text-4xl lg:text-[42px] xl:text-[52px] ${activeThumbnail.accentColor}`}
-            >
-              {activeThumbnail.titleLine2}
-            </span>
-          </h1>
+            No translate.
+            No scale.
+            No movement.
+
+            Just opacity.
+          */}
+          <div
+            className={`transition-opacity ease-in-out ${
+              isTextVisible ? "opacity-100" : "opacity-0"
+            }`}
+            style={{
+              transitionDuration: `${TRANSITION_DURATION}ms`,
+            }}
+          >
+            <h1 className="leading-[1.15] tracking-tight">
+              <span className="block text-2xl font-normal text-white sm:text-3xl md:text-4xl lg:text-[42px] xl:text-[40px]">
+                {activeThumbnail.titleLine1}
+              </span>
+
+              <span
+                className={`mt-1.5 block text-2xl font-normal sm:mt-2 md:text-4xl lg:text-[42px] xl:text-[52px] ${activeThumbnail.accentColor}`}
+              >
+                {activeThumbnail.titleLine2}
+              </span>
+            </h1>
+          </div>
         </div>
       </div>
 
@@ -351,7 +407,6 @@ export default function Hero() {
         }`}
       >
         <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end sm:gap-8">
-
           {/* EXPERIENCE */}
           <div className="flex flex-col">
             <span className="text-4xl font-normal leading-none tracking-tight text-white sm:text-5xl md:text-6xl">
